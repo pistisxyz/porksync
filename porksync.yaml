@@ -1,5 +1,5 @@
-megumax.moe:
+example.com:
   address: "localhost"
 
-factorio.megumax.moe:
-  address: "pistis.xyz"
+google.example.com:
+  address: "google.com"
