@@ -42,15 +42,9 @@ func _init() {
 		CONF_PATH, _ = filepath.Abs(os.Getenv("PORKSYNC_YAML_PATH") + "/porksync.yaml")
 	}
 
-	if _, err := os.Stat(LOG_PATH); err != nil {
-		file, err := os.Create(LOG_PATH)
-		CatchErr(err)
-		logFile = file
-	} else {
-		file, err := os.Open(LOG_PATH)
-		CatchErr(err)
-		logFile = file
-	}
+	file, err := os.OpenFile(LOG_PATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	CatchErr(err)
+	logFile = file
 }
 
 func main() {
@@ -64,6 +58,8 @@ func main() {
 	_init()
 
 	defer logFile.Close()
+
+	Log("Starting routine check!")
 
 	cat := ReadConf()
 	remote := ParseRetrieve(Fetch())
