@@ -27,16 +27,6 @@ var (
 )
 
 func _init() {
-	if _, err := os.Stat(CONF_PATH); err != nil {
-		file, err := os.Create(CONF_PATH)
-		CatchErr(err)
-		logFile = file
-	} else {
-		file, err := os.Open(LOG_PATH)
-		CatchErr(err)
-		logFile = file
-	}
-
 	if runtime.GOOS == "linux" {
 		LOG_PATH = "/var/log/porksync.log"
 		CONF_PATH = "/etc/porksync.yaml"
@@ -50,6 +40,16 @@ func _init() {
 	}
 	if os.Getenv("PORKSYNC_YAML_PATH") != "" {
 		CONF_PATH, _ = filepath.Abs(os.Getenv("PORKSYNC_YAML_PATH") + "/porksync.yaml")
+	}
+
+	if _, err := os.Stat(LOG_PATH); err != nil {
+		file, err := os.Create(LOG_PATH)
+		CatchErr(err)
+		logFile = file
+	} else {
+		file, err := os.Open(LOG_PATH)
+		CatchErr(err)
+		logFile = file
 	}
 }
 
