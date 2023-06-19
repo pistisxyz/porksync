@@ -63,6 +63,8 @@ func main() {
 
 	_init()
 
+	defer logFile.Close()
+
 	cat := ReadConf()
 	remote := ParseRetrieve(Fetch())
 	myIp := GetMyIp()
