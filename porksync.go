@@ -59,7 +59,7 @@ func main() {
 
 	defer logFile.Close()
 
-	Log("Starting routine check!")
+	Log("Starting routine check for " + os.Getenv("DOMAIN_NAME"))
 
 	cat := ReadConf()
 	remote := ParseRetrieve(Fetch())
@@ -126,7 +126,7 @@ func Fetch() []byte {
 	client := &http.Client{}
 
 	data := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"))
-	req, err := http.NewRequest("POST", "https://porkbun.com/api/json/v3/dns/retrieve/megumax.moe", bytes.NewBuffer([]byte(data)))
+	req, err := http.NewRequest("POST", "https://porkbun.com/api/json/v3/dns/retrieve/"+os.Getenv("DOMAIN_NAME"), bytes.NewBuffer([]byte(data)))
 	CatchErr(err)
 
 	resp, err := client.Do(req)
