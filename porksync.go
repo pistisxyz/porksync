@@ -59,34 +59,52 @@ func main() {
 
 	defer logFile.Close()
 
-	Log("Starting routine check for " + os.Getenv("DOMAIN_NAME"))
+	CheckDomains()
+}
+
+func CheckDomains() {
 
 	cat := ReadConf()
-	remote := ParseRetrieve(Fetch())
 	myIp := GetMyIp()
-	if remote.Status != "SUCCESS" {
-		fmt.Println("Failed fetching from porkbun")
-		os.Exit(1)
-	}
 
-	for entry := range cat {
-		address := cat[entry].Address
-		var ips net.IP
-
-		if address == "localhost" {
-			ips = myIp
-		} else {
-			_ips, _ := net.LookupIP(address)
-			ips = _ips[0]
+	for domainName := range cat {
+		remote := ParseRetrieve(Fetch(domainName))
+		if remote.Status != "SUCCESS" {
+			Log("Failed fetching from porkbun")
+			os.Exit(1)
 		}
+		Log("Starting routine check for %v", domainName)
 
-		for _, record := range remote.Records {
-			if record.Type == "A" && record.Name == entry {
-				remoteIp := ParseIP(record.Content)
-				if !ips.Equal(remoteIp) {
-					Log(fmt.Sprintf("Mismatched IPs %v <> %v", ips, remoteIp))
-					UpdateDomainRecord(record, ips.String())
-				}
+		var ips net.IP
+		subDomains := cat[domainName].(Catalogue)
+		for subDomain := range subDomains {
+			domainNameAlt := domainName
+			var address string
+			if subDomain == "__address" {
+				address = subDomains[subDomain].(string)
+			} else {
+				address = subDomains[subDomain].(Catalogue)["address"].(string)
+				domainNameAlt = subDomain + "." + domainName
+			}
+			if address == "localhost" {
+				ips = myIp
+			} else {
+				_ips, _ := net.LookupIP(address)
+				ips = _ips[0]
+			}
+
+			IpCompare(remote, domainNameAlt, ips)
+		}
+	}
+}
+
+func IpCompare(remote Retireve, domainName string, ips net.IP) {
+	for _, record := range remote.Records {
+		if record.Type == "A" && record.Name == domainName {
+			remoteIp := ParseIP(record.Content)
+			if !ips.Equal(remoteIp) {
+				Log(fmt.Sprintf("Mismatched IPs %v <> %v", ips, remoteIp))
+				UpdateDomainRecord(record, ips.String())
 			}
 		}
 	}
@@ -122,11 +140,11 @@ func Log(log string, a ...any) {
 	}
 }
 
-func Fetch() []byte {
+func Fetch(domainName string) []byte {
 	client := &http.Client{}
 
 	data := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"))
-	req, err := http.NewRequest("POST", "https://porkbun.com/api/json/v3/dns/retrieve/"+os.Getenv("DOMAIN_NAME"), bytes.NewBuffer([]byte(data)))
+	req, err := http.NewRequest("POST", "https://porkbun.com/api/json/v3/dns/retrieve/"+domainName, bytes.NewBuffer([]byte(data)))
 	CatchErr(err)
 
 	resp, err := client.Do(req)
@@ -149,10 +167,11 @@ func ParseIP(ip string) net.IP {
 }
 
 func ReadConf() Catalogue {
-	cat := Catalogue{}
+	var cat Catalogue
 	data, err := os.ReadFile(CONF_PATH)
 	CatchErr(err)
-	yaml.Unmarshal(data, cat)
+	err = yaml.Unmarshal(data, &cat)
+	CatchErr(err)
 	return cat
 }
 
@@ -172,7 +191,7 @@ func CatchErr(err error) {
 func GetMyIp() net.IP {
 	client := &http.Client{}
 	dataKeys := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"))
-	req, _ := http.NewRequest("POST", "https://porkbun.com/api/json/v3/ping", bytes.NewBuffer([]byte(dataKeys)))
+	req, _ := http.NewRequest("POST", "https://api-ipv4.porkbun.com/api/json/v3/ping", bytes.NewBuffer([]byte(dataKeys)))
 	resp, err := client.Do(req)
 	if err != nil {
 		Log("Porkbun API doesn't respond or no internet connection")
@@ -201,9 +220,7 @@ func byteIt(s string) byte {
 	return byte(b)
 }
 
-type Catalogue map[string]struct {
-	Address string `yaml:"address"`
-}
+type Catalogue map[string]interface{}
 
 type Retireve struct {
 	Status  string   `json:"status"`
