@@ -1,6 +1,0 @@
-mydomain.com:
-  __address: "localhost"
-  subdomain: 
-    address: "google.com"
-  subdomain2: 
-    address: "youtube.com"

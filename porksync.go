@@ -24,53 +24,67 @@ var (
 	logFile   *os.File
 	LOG_PATH  string
 	CONF_PATH string
+	dryRun    = false
 )
 
 func _init() {
 	if runtime.GOOS == "linux" {
 		LOG_PATH = "/var/log/porksync.log"
-		CONF_PATH = "/etc/porksync.yaml"
+		CONF_PATH = "/etc/porksync/"
 	} else {
 		LOG_PATH, _ = filepath.Abs("./porksync.log")
-		CONF_PATH, _ = filepath.Abs("./porksync.yaml")
+		CONF_PATH, _ = filepath.Abs("./porksync/")
 	}
 
 	if os.Getenv("PORKSYNC_LOG_PATH") != "" {
 		LOG_PATH, _ = filepath.Abs(os.Getenv("PORKSYNC_LOG_PATH") + "/porksync.log")
 	}
-	if os.Getenv("PORKSYNC_YAML_PATH") != "" {
-		CONF_PATH, _ = filepath.Abs(os.Getenv("PORKSYNC_YAML_PATH") + "/porksync.yaml")
+	if os.Getenv("PORKSYNC_CONF_PATH") != "" {
+		CONF_PATH, _ = filepath.Abs(os.Getenv("PORKSYNC_CONF_PATH"))
 	}
 
 	file, err := os.OpenFile(LOG_PATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	CatchErr(err)
 	logFile = file
+
+	for _, arg := range os.Args {
+		if (arg == "--dry") || (arg == "-d") {
+			dryRun = true
+		}
+	}
 }
 
 func main() {
 	godotenv.Load(".env")
 
-	if os.Getenv("SECRET_TOKEN") == "" || os.Getenv("PUBLIC_TOKEN") == "" {
-		fmt.Println("Missing SECRET_TOKEN or PUBLIC_TOKEN")
-		os.Exit(1)
-	}
-
 	_init()
 
 	defer logFile.Close()
 
-	CheckDomains()
+	CatchErr(filepath.Walk(CONF_PATH, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() {
+			CheckDomains(ReadConf(path))
+		}
+
+		return nil
+	}))
 }
 
-func CheckDomains() {
-
-	cat := ReadConf()
-	myIp := GetMyIp()
+func CheckDomains(cat Catalogue) {
+	sk, pk := cat["sk"].(string), cat["pk"].(string)
+	myIp := GetMyIp(sk, pk)
 
 	for domainName := range cat {
-		remote := ParseRetrieve(Fetch(domainName))
+		if domainName == "pk" || domainName == "sk" {
+			continue
+		}
+		remote := ParseRetrieve(Fetch(domainName, pk, sk))
 		if remote.Status != "SUCCESS" {
-			Log("Failed fetching from porkbun")
+			Log("Failed fetching from porkbun for %v", domainName)
 			os.Exit(1)
 		}
 		Log("Starting routine check for %v", domainName)
@@ -93,24 +107,24 @@ func CheckDomains() {
 				ips = _ips[0]
 			}
 
-			IpCompare(remote, domainNameAlt, ips)
+			IpCompare(remote, domainNameAlt, ips, sk, pk)
 		}
 	}
 }
 
-func IpCompare(remote Retireve, domainName string, ips net.IP) {
+func IpCompare(remote Retireve, domainName string, ips net.IP, sk string, pk string) {
 	for _, record := range remote.Records {
 		if record.Type == "A" && record.Name == domainName {
 			remoteIp := ParseIP(record.Content)
 			if !ips.Equal(remoteIp) {
 				Log(fmt.Sprintf("Mismatched IPs %v <> %v", ips, remoteIp))
-				UpdateDomainRecord(record, ips.String())
+				UpdateDomainRecord(record, ips.String(), sk, pk)
 			}
 		}
 	}
 }
 
-func UpdateDomainRecord(domain Record, newIp string) {
+func UpdateDomainRecord(domain Record, newIp string, sk string, pk string) {
 	client := &http.Client{}
 	_arr := strings.Split(domain.Name, ".")
 	domainName := strings.Join(_arr[len(_arr)-2:], ".")
@@ -121,9 +135,12 @@ func UpdateDomainRecord(domain Record, newIp string) {
 		"name": "%v",
 		"type": "%v",
 		"content": "%v"
-	}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"), subDomain, domain.Type, newIp)
+	}`, sk, pk, subDomain, domain.Type, newIp)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("https://porkbun.com/api/json/v3/dns/edit/%v/%v", domainName, domain.Id), bytes.NewBuffer([]byte(data)))
 	Log("%+v", domain)
+	if dryRun {
+		return
+	}
 	Log("https://porkbun.com/api/json/v3/dns/edit/%v/%v", domain.Name, domain.Id)
 	res, err := client.Do(req)
 	CatchErr(err)
@@ -140,10 +157,10 @@ func Log(log string, a ...any) {
 	}
 }
 
-func Fetch(domainName string) []byte {
+func Fetch(domainName string, pk string, sk string) []byte {
 	client := &http.Client{}
 
-	data := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"))
+	data := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, sk, pk)
 	req, err := http.NewRequest("POST", "https://porkbun.com/api/json/v3/dns/retrieve/"+domainName, bytes.NewBuffer([]byte(data)))
 	CatchErr(err)
 
@@ -166,9 +183,9 @@ func ParseIP(ip string) net.IP {
 	return net.IPv4(byteIt(octets[0]), byteIt(octets[1]), byteIt(octets[2]), byteIt(octets[3]))
 }
 
-func ReadConf() Catalogue {
+func ReadConf(conf_path string) Catalogue {
 	var cat Catalogue
-	data, err := os.ReadFile(CONF_PATH)
+	data, err := os.ReadFile(conf_path)
 	CatchErr(err)
 	err = yaml.Unmarshal(data, &cat)
 	CatchErr(err)
@@ -188,9 +205,9 @@ func CatchErr(err error) {
 	}
 }
 
-func GetMyIp() net.IP {
+func GetMyIp(sk string, pk string) net.IP {
 	client := &http.Client{}
-	dataKeys := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, os.Getenv("SECRET_TOKEN"), os.Getenv("PUBLIC_TOKEN"))
+	dataKeys := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, sk, pk)
 	req, _ := http.NewRequest("POST", "https://api-ipv4.porkbun.com/api/json/v3/ping", bytes.NewBuffer([]byte(dataKeys)))
 	resp, err := client.Do(req)
 	if err != nil {
