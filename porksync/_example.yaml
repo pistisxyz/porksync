@@ -1,0 +1,8 @@
+pk: "pk1_[your api key]"
+sk: "sk1_[your secret api key]"
+mydomain.com: 
+  __address: "localhost"
+  mysub_domain:
+    address: "localhost"
+  api:
+    address: "external-api.com"
