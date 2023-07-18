@@ -27,7 +27,9 @@ var (
 	dryRun    = false
 )
 
-func _init() {
+func init() {
+	godotenv.Load(".env")
+
 	if runtime.GOOS == "linux" {
 		LOG_PATH = "/var/log/porksync.log"
 		CONF_PATH = "/etc/porksync/"
@@ -55,10 +57,6 @@ func _init() {
 }
 
 func main() {
-	godotenv.Load(".env")
-
-	_init()
-
 	defer logFile.Close()
 
 	CatchErr(filepath.Walk(CONF_PATH, func(path string, info os.FileInfo, err error) error {
