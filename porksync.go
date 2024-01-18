@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	_ "github.com/k0kubun/pp/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -46,7 +48,8 @@ func init() {
 	}
 
 	file, err := os.OpenFile(LOG_PATH, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	CatchErr(err)
+	// CatchErr(err)
+	_ = err
 	logFile = file
 
 	for _, arg := range os.Args {
@@ -64,16 +67,25 @@ func main() {
 			return err
 		}
 
-		if !info.IsDir() {
-			CheckDomains(ReadConf(path))
+		if !info.IsDir() && info.Name()[0] != '_' {
+			CheckDomains(ReadConf(path), path)
 		}
 
 		return nil
 	}))
 }
 
-func CheckDomains(cat Catalogue) {
+func CheckDomains(cat Catalogue, path string) {
+	if cat["sk"] == nil {
+		fmt.Printf("%v: 'sk' is required!\n", path)
+		return
+	}
+	if cat["pk"] == nil {
+		fmt.Printf("%v: 'pk' is required!\n", path)
+		return
+	}
 	sk, pk := cat["sk"].(string), cat["pk"].(string)
+
 	myIp := GetMyIp(sk, pk)
 
 	for domainName := range cat {
@@ -94,6 +106,9 @@ func CheckDomains(cat Catalogue) {
 			var address string
 			if subDomain == "__address" {
 				address = subDomains[subDomain].(string)
+			} else if subDomain == "__ssl" {
+				isCertValid(subDomains[subDomain].(string), domainName, sk, pk)
+				continue
 			} else {
 				address = subDomains[subDomain].(Catalogue)["address"].(string)
 				domainNameAlt = subDomain + "." + domainName
@@ -235,7 +250,64 @@ func byteIt(s string) byte {
 	return byte(b)
 }
 
+func isCertValid(path string, name, sk, pk string) {
+	cmd := exec.Command("openssl", "x509", "-checkend", "86400", "-noout", "-in", path+"domain.cert.pem")
+	b, _ := cmd.Output()
+	fmt.Println(string(b))
+	if !strings.Contains(string(b), "not") {
+		fmt.Println("expired")
+		dataKeys := fmt.Sprintf(`{"secretapikey": "%v", "apikey": "%v"}`, sk, pk)
+		req, _ := http.NewRequest("POST", "https://porkbun.com/api/json/v3/ssl/retrieve/"+name, bytes.NewBuffer([]byte(dataKeys)))
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		CatchErr(err)
+		bytes, err := io.ReadAll(resp.Body)
+		CatchErr(err)
+		certs := Certs{}
+		err = json.Unmarshal(bytes, &certs)
+		CatchErr(err)
+		if certs.Status != "SUCCESS" {
+			fmt.Println("Failed getting certificates for "+name)
+			return
+		}
+
+		os.Remove(path+"domain.cert.pem")
+		file, err := os.Create(path+"domain.cert.pem")
+		CatchErr(err)
+		_, err = file.Write([]byte(certs.Cert))
+		CatchErr(err)
+
+		os.Remove(path+"intermediate.cert.pem")
+		file, err = os.Create(path+"intermediate.cert.pem")
+		CatchErr(err)
+		_, err = file.Write([]byte(certs.Intermid))
+		CatchErr(err)
+
+		os.Remove(path+"private.key.pem")
+		file, err = os.Create(path+"private.key.pem")
+		CatchErr(err)
+		_, err = file.Write([]byte(certs.Intermid))
+		CatchErr(err)
+
+		os.Remove(path+"public.key.pem")
+		file, err = os.Create(path+"public.key.pem")
+		CatchErr(err)
+		_, err = file.Write([]byte(certs.Intermid))
+		CatchErr(err)
+
+		fmt.Println("Updated certificates")
+	}
+}
+
 type Catalogue map[string]interface{}
+
+type Certs struct {
+	Status   string `json:"status"`
+	Intermid string `json:"intermediatecertificate"`
+	Cert     string `json:"certificatechain"`
+	Private  string `json:"privatekey"`
+	Public   string `json:"publickey"`
+}
 
 type Retireve struct {
 	Status  string   `json:"status"`

@@ -2,6 +2,7 @@ pk: "pk1_[your api key]"
 sk: "sk1_[your secret api key]"
 mydomain.com: 
   __address: "localhost"
+  __ssl: "/etc/ssl/"
   mysub_domain:
     address: "localhost"
   api:
