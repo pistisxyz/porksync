@@ -286,13 +286,13 @@ func isCertValid(path string, name, sk, pk string) {
 		os.Remove(path+"private.key.pem")
 		file, err = os.Create(path+"private.key.pem")
 		CatchErr(err)
-		_, err = file.Write([]byte(certs.Intermid))
+		_, err = file.Write([]byte(certs.Private))
 		CatchErr(err)
 
 		os.Remove(path+"public.key.pem")
 		file, err = os.Create(path+"public.key.pem")
 		CatchErr(err)
-		_, err = file.Write([]byte(certs.Intermid))
+		_, err = file.Write([]byte(certs.Public))
 		CatchErr(err)
 
 		fmt.Println("Updated certificates")
