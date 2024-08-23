@@ -19,14 +19,16 @@ import (
 
 	"github.com/joho/godotenv"
 	_ "github.com/k0kubun/pp/v3"
+	"github.com/mattn/go-shellwords"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	logFile   *os.File
-	LOG_PATH  string
-	CONF_PATH string
-	dryRun    = false
+	logFile     *os.File
+	LOG_PATH    string
+	CONF_PATH   string
+	dryRun      = false
+	shellParser = shellwords.NewParser()
 )
 
 func init() {
@@ -92,6 +94,9 @@ func CheckDomains(cat Catalogue, path string) {
 	myIp := GetMyIp(sk, pk)
 
 	for domainName := range cat {
+		if domainName == "reload_cmd" {
+			Exec(cat[domainName].(string))
+		}
 		if domainName == "pk" || domainName == "sk" {
 			continue
 		}
@@ -290,10 +295,17 @@ func isCertValid(path string, name, sk, pk string) {
 	}
 }
 
+func Exec(cmd string) {
+	parts, err := shellParser.Parse(cmd)
+	CatchErr(err)
+	exe := exec.Command(parts[0], parts[1:]...)
+	CatchErr(exe.Run())
+}
+
 type Catalogue map[string]interface{}
 
 type Certs struct {
-	Status string `json:"status"`
+	Status  string `json:"status"`
 	Cert    string `json:"certificatechain"`
 	Private string `json:"privatekey"`
 	Public  string `json:"publickey"`

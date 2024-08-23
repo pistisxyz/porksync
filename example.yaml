@@ -1,5 +1,6 @@
 pk: "pk1_[your api key]"
 sk: "sk1_[your secret api key]"
+reload_cmd: "nginx -s reload"
 mydomain.com: 
   __address: "localhost"
   __ssl: "/etc/ssl/"
