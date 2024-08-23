@@ -32,12 +32,15 @@ var (
 func init() {
 	godotenv.Load(".env")
 
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		LOG_PATH = "/var/log/porksync.log"
 		CONF_PATH = "/etc/porksync/"
-	} else {
+	case "windows":
 		LOG_PATH, _ = filepath.Abs("./porksync.log")
 		CONF_PATH, _ = filepath.Abs("./porksync/")
+	default:
+		panic(fmt.Sprintf("Unsupported OS (%s)", runtime.GOOS))
 	}
 
 	if os.Getenv("PORKSYNC_LOG_PATH") != "" {
@@ -267,33 +270,21 @@ func isCertValid(path string, name, sk, pk string) {
 		err = json.Unmarshal(bytes, &certs)
 		CatchErr(err)
 		if certs.Status != "SUCCESS" {
-			fmt.Println("Failed getting certificates for "+name)
+			fmt.Println("Failed getting certificates for " + name)
 			return
 		}
 
-		os.Remove(path+"domain.cert.pem")
-		file, err := os.Create(path+"domain.cert.pem")
-		CatchErr(err)
-		_, err = file.Write([]byte(certs.Cert))
-		CatchErr(err)
+		replace := func(fileName, data string) {
+			os.Remove(path + fileName)
+			file, err := os.Create(path + fileName)
+			CatchErr(err)
+			_, err = file.Write([]byte(data))
+			CatchErr(err)
+		}
 
-		os.Remove(path+"intermediate.cert.pem")
-		file, err = os.Create(path+"intermediate.cert.pem")
-		CatchErr(err)
-		_, err = file.Write([]byte(certs.Intermid))
-		CatchErr(err)
-
-		os.Remove(path+"private.key.pem")
-		file, err = os.Create(path+"private.key.pem")
-		CatchErr(err)
-		_, err = file.Write([]byte(certs.Private))
-		CatchErr(err)
-
-		os.Remove(path+"public.key.pem")
-		file, err = os.Create(path+"public.key.pem")
-		CatchErr(err)
-		_, err = file.Write([]byte(certs.Public))
-		CatchErr(err)
+		replace("domain.cert.pem", certs.Cert)
+		replace("private.key.pem", certs.Private)
+		replace("public.key.pem", certs.Public)
 
 		fmt.Println("Updated certificates")
 	}
@@ -302,11 +293,10 @@ func isCertValid(path string, name, sk, pk string) {
 type Catalogue map[string]interface{}
 
 type Certs struct {
-	Status   string `json:"status"`
-	Intermid string `json:"intermediatecertificate"`
-	Cert     string `json:"certificatechain"`
-	Private  string `json:"privatekey"`
-	Public   string `json:"publickey"`
+	Status string `json:"status"`
+	Cert    string `json:"certificatechain"`
+	Private string `json:"privatekey"`
+	Public  string `json:"publickey"`
 }
 
 type Retireve struct {

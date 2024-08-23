@@ -22,5 +22,3 @@ go.work
 
 .env
 porksync.log
-porksync/*
-!porksync/_example.yaml
